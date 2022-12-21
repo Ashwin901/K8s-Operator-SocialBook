@@ -9,9 +9,11 @@ import (
 	"github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
 	informers "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/ashwin901.operators/v1alpha1"
 	lister "github.com/ashwin901/social-book-operator/pkg/client/listers/ashwin901.operators/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -109,11 +111,12 @@ func (c *Controller) reconcile(key string) error {
 	return c.handleMongoDbDeployment(*sb)
 }
 
+// TODO: even if one of the resource fails the resources created before this will still remain, handle this
 func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	// config map
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      sb.Name,
+			Name:      "mongo-cm-" + sb.Name,
 			Namespace: sb.Namespace,
 		},
 		Data: map[string]string{
@@ -129,6 +132,8 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 		return err
 	}
 
+	fmt.Println("Config map created")
+
 	// create a persistent volume
 	pv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -140,6 +145,10 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 			},
 			Capacity: corev1.ResourceList{
 				corev1.ResourceName(corev1.ResourceStorage): resource.MustParse("1Gi"),
+			},
+			ClaimRef: &corev1.ObjectReference{
+				Namespace: sb.Namespace,
+				Name:      "mongo-pvc-" + sb.Name,
 			},
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
@@ -155,6 +164,8 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 		fmt.Println("Error while creating persistent volume: ", err.Error())
 		return err
 	}
+
+	fmt.Println("PV created")
 
 	// create a persistent volume claim
 	pvc := &corev1.PersistentVolumeClaim{
@@ -180,9 +191,123 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 		return err
 	}
 
-	// mongo db deployment
+	fmt.Println("PVC created")
 
-	// mong db service
+	var replicas int32
+	replicas = 1
+
+	// mongo db deployment
+	mongoDep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sb.Name,
+			Namespace: sb.Namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "mongodb-" + sb.Name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: sb.Name,
+					Labels: map[string]string{
+						"app": "mongodb-" + sb.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							Name: "mongo-volume-" + sb.Name,
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "mongo-pvc-" + sb.Name,
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "mongodb",
+							Image: "mongo",
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: 27017,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "MONGO_INITDB_ROOT_USERNAME",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "mongo-cm-" + sb.Name,
+											},
+											Key: "mongo-root-username",
+										},
+									},
+								},
+								{
+									Name: "MONGO_INITDB_ROOT_PASSWORD",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "mongo-cm-" + sb.Name,
+											},
+											Key: "mongo-root-password",
+										},
+									},
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "mongo-volume-" + sb.Name,
+									MountPath: "/data/db",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), mongoDep, metav1.CreateOptions{})
+
+	if err != nil {
+		fmt.Println("Error while creating mongo deployment: ", err.Error())
+		return err
+	}
+
+	fmt.Println("Mongo Deployment created")
+
+	// mongo db service
+	mongoSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mongo-svc-" + sb.Name,
+			Namespace: sb.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app": "mongodb-" + sb.Name,
+			},
+			Ports: []corev1.ServicePort{
+				{
+					TargetPort: intstr.FromString("27017"),
+					Port:       27017,
+				},
+			},
+		},
+	}
+
+	_, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), mongoSvc, metav1.CreateOptions{})
+	if err != nil {
+		fmt.Println("Error while creating mongo service: ", err.Error())
+		return err
+	}
+
+	fmt.Println("Mongo Service created")
 	return nil
 }
 
