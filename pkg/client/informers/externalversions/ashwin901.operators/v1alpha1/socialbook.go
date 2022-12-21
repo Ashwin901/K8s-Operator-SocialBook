@@ -22,10 +22,10 @@ import (
 	"context"
 	time "time"
 
-	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/apis/operators/v1alpha1"
+	ashwin901operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
 	versioned "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/listers/operators/v1alpha1"
+	v1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/listers/ashwin901.operators/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -71,7 +71,7 @@ func NewFilteredSocialBookInformer(client versioned.Interface, namespace string,
 				return client.OperatorsV1alpha1().SocialBooks(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&operatorsv1alpha1.SocialBook{},
+		&ashwin901operatorsv1alpha1.SocialBook{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,7 +82,7 @@ func (f *socialBookInformer) defaultInformer(client versioned.Interface, resyncP
 }
 
 func (f *socialBookInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&operatorsv1alpha1.SocialBook{}, f.defaultInformer)
+	return f.factory.InformerFor(&ashwin901operatorsv1alpha1.SocialBook{}, f.defaultInformer)
 }
 
 func (f *socialBookInformer) Lister() v1alpha1.SocialBookLister {

@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
-	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/operators/v1alpha1"
-	fakeoperatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/operators/v1alpha1/fake"
+	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/ashwin901.operators/v1alpha1"
+	fakeoperatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/ashwin901.operators/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"

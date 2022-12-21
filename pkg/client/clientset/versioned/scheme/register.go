@@ -19,7 +19,7 @@ limitations under the License.
 package scheme
 
 import (
-	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/apis/operators/v1alpha1"
+	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

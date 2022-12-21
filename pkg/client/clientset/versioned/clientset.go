@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"net/http"
 
-	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/operators/v1alpha1"
+	operatorsv1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/ashwin901.operators/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"

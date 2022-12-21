@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	v1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/operators/v1alpha1"
+	v1alpha1 "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/typed/ashwin901.operators/v1alpha1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )

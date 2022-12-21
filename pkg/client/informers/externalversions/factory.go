@@ -24,8 +24,8 @@ import (
 	time "time"
 
 	versioned "github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
+	ashwin901operators "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/ashwin901.operators"
 	internalinterfaces "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/internalinterfaces"
-	operators "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/operators"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -243,9 +243,9 @@ type SharedInformerFactory interface {
 	// client.
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
-	Operators() operators.Interface
+	Operators() ashwin901operators.Interface
 }
 
-func (f *sharedInformerFactory) Operators() operators.Interface {
-	return operators.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Operators() ashwin901operators.Interface {
+	return ashwin901operators.New(f, f.namespace, f.tweakListOptions)
 }

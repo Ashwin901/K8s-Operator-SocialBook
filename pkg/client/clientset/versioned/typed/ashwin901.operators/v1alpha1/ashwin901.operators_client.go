@@ -21,7 +21,7 @@ package v1alpha1
 import (
 	"net/http"
 
-	v1alpha1 "github.com/ashwin901/social-book-operator/pkg/apis/operators/v1alpha1"
+	v1alpha1 "github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
 	"github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
