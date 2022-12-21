@@ -1,0 +1,9 @@
+apiVersion: ashwin901.operators/v1alpha1
+kind: SocialBook
+metadata:
+  name: socialbook1
+spec:
+  replicas: 1
+  username: ashwin
+  pwd: admin  
+  port: "3000"
