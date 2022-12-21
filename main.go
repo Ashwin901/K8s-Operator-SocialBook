@@ -1,9 +1,8 @@
 package main
 
 import (
+	"ashwin901/social-book-operator/pkg/apis/operators/v1alpha1"
 	"fmt"
-
-	"github.com/ashwin901/social-book-operator/pkg/apis/operators/v1alpha1"
 )
 
 func main() {
