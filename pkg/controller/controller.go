@@ -10,32 +10,53 @@ import (
 	"github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
 	informers "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/ashwin901.operators/v1alpha1"
 	lister "github.com/ashwin901/social-book-operator/pkg/client/listers/ashwin901.operators/v1alpha1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeInformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	appsLister "k8s.io/client-go/listers/apps/v1"
+	coreLister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
 
 type Controller struct {
-	clientset       kubernetes.Interface
-	customClientset versioned.Interface
-	lister          lister.SocialBookLister
-	hasSynced       cache.InformerSynced
-	queue           workqueue.RateLimitingInterface
+	clientset        kubernetes.Interface
+	customClientset  versioned.Interface
+	socialbookLister lister.SocialBookLister
+	deploymentLister appsLister.DeploymentLister
+	serviceLister    coreLister.ServiceLister
+	configMapLister  coreLister.ConfigMapLister
+	pvLister         coreLister.PersistentVolumeLister
+	pvcLister        coreLister.PersistentVolumeClaimLister
+	socialbookSynced cache.InformerSynced
+	deploymentSynced cache.InformerSynced
+	serviceSynced    cache.InformerSynced
+	configMapSynced  cache.InformerSynced
+	pvSynced         cache.InformerSynced
+	pvcSynced        cache.InformerSynced
+	queue            workqueue.RateLimitingInterface
 }
 
-func NewController(clientset kubernetes.Interface, customClientset versioned.Interface, socialBookInformer informers.SocialBookInformer) *Controller {
+func NewController(clientset kubernetes.Interface, customClientset versioned.Interface, socialBookInformer informers.SocialBookInformer, factory kubeInformers.SharedInformerFactory) *Controller {
+
 	controller := &Controller{
-		clientset:       clientset,
-		customClientset: customClientset,
-		lister:          socialBookInformer.Lister(),
-		hasSynced:       socialBookInformer.Informer().HasSynced,
-		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "socialbookController"),
+		clientset:        clientset,
+		customClientset:  customClientset,
+		socialbookLister: socialBookInformer.Lister(),
+		deploymentLister: factory.Apps().V1().Deployments().Lister(),
+		serviceLister:    factory.Core().V1().Services().Lister(),
+		configMapLister:  factory.Core().V1().ConfigMaps().Lister(),
+		pvLister:         factory.Core().V1().PersistentVolumes().Lister(),
+		pvcLister:        factory.Core().V1().PersistentVolumeClaims().Lister(),
+		socialbookSynced: socialBookInformer.Informer().HasSynced,
+		deploymentSynced: factory.Apps().V1().Deployments().Informer().HasSynced,
+		serviceSynced:    factory.Core().V1().Services().Informer().HasSynced,
+		configMapSynced:  factory.Core().V1().ConfigMaps().Informer().HasSynced,
+		pvSynced:         factory.Core().V1().PersistentVolumes().Informer().HasSynced,
+		pvcSynced:        factory.Core().V1().PersistentVolumeClaims().Informer().HasSynced,
+		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "socialbookController"),
 	}
 
 	socialBookInformer.Informer().AddEventHandler(
@@ -54,7 +75,7 @@ func (c *Controller) Run(ch chan struct{}) {
 
 	defer c.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ch, c.hasSynced) {
+	if !cache.WaitForCacheSync(ch, c.socialbookSynced) {
 		fmt.Println("Cache not synced")
 		return
 	}
@@ -87,13 +108,14 @@ func (c *Controller) processItem() bool {
 	if !ok {
 		// key here is invalid, so we forget the item
 		c.queue.Forget(item)
-		return false
+		return true
 	}
 
 	if c.reconcile(key) != nil {
-		// TODO: handle requeing logic
+		// requeue the item
+		c.queue.AddRateLimited(item)
 		fmt.Println("Error during reconcile")
-		return false
+		return true
 	}
 
 	// if there were no errors we forget the item from queue
@@ -104,19 +126,20 @@ func (c *Controller) processItem() bool {
 func (c *Controller) reconcile(key string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 
-	// invalid key
 	if err != nil {
-		return err
+		return nil // no need to requeue as the key is invalid
 	}
 
 	// get the SocialBook CR using lister
-	sb, err := c.lister.SocialBooks(ns).Get(name)
+	sb, err := c.socialbookLister.SocialBooks(ns).Get(name)
 
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil // object not present, so no need to requeue
+		}
 		fmt.Println("Error while getting resource from the lister: ", err.Error())
 		return err
 	}
-
 	err = c.handleMongoDbDeployment(sb)
 	if err == nil {
 		err = c.handleSocialBookDeployment(sb)
@@ -127,204 +150,87 @@ func (c *Controller) reconcile(key string) error {
 // TODO: even if one of the resource fails the resources created before this will still remain, handle this
 // creating a configmap, pv, pvc, deployment and service for MongoDB
 func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
-	// config map
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-mongo-cm",
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Data: map[string]string{
-			"mongo-root-username": sb.Spec.UserName,
-			"mongo-root-password": sb.Spec.Password,
-		},
+
+	cmName := sb.Name + "-mongo-cm"
+	pvName := sb.Name + "-mongo-pv"
+	pvcName := sb.Name + "-mongo-pvc"
+	depName := sb.Name + "-mongodb"
+	svcName := sb.Name + "-mongo-svc"
+
+	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
+	if errors.IsNotFound(err) {
+		cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newMongoConfigMap(sb), metav1.CreateOptions{})
 	}
-
-	cm, err := c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
-
 	if err != nil {
-		fmt.Println("Error while creating config map: ", err.Error())
+		fmt.Println("Error while creating/getting config map: ", err.Error())
 		return err
 	}
-
+	// configmap with the same name exists but is not controlled by current sb
+	if !metav1.IsControlledBy(cm, sb) {
+		return fmt.Errorf("%s", "Config Map already exists")
+	}
 	fmt.Println("Config map created")
 
-	// create a persistent volume
-	pv := &corev1.PersistentVolume{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-mongo-pv",
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Spec: corev1.PersistentVolumeSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				"ReadWriteOnce",
-			},
-			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimDelete,
-			Capacity: corev1.ResourceList{
-				corev1.ResourceName(corev1.ResourceStorage): resource.MustParse("1Gi"),
-			},
-			ClaimRef: &corev1.ObjectReference{
-				Namespace: sb.Namespace,
-				Name:      sb.Name + "-mongo-pvc",
-			},
-			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/tmp/data",
-				},
-			},
-		},
+	pv, err := c.pvLister.Get(pvName)
+	if errors.IsNotFound(err) {
+		// create a persistent volume
+		pv, err = c.clientset.CoreV1().PersistentVolumes().Create(context.Background(), newPersistentVolume(sb), metav1.CreateOptions{})
 	}
-
-	_, err = c.clientset.CoreV1().PersistentVolumes().Create(context.Background(), pv, metav1.CreateOptions{})
-
 	if err != nil {
 		fmt.Println("Error while creating persistent volume: ", err.Error())
 		return err
 	}
-
+	if !metav1.IsControlledBy(pv, sb) {
+		return fmt.Errorf("%s", "Persistent volume already exists")
+	}
 	fmt.Println("PV created")
 
-	// create a persistent volume claim
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-mongo-pvc",
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				"ReadWriteOnce",
-			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceStorage): resource.MustParse("1Gi"),
-				},
-			},
-		},
+	pvc, err := c.pvcLister.PersistentVolumeClaims(sb.Namespace).Get(pvcName)
+
+	if errors.IsNotFound(err) {
+		// create a persistent volume claim
+
+		pvc, err = c.clientset.CoreV1().PersistentVolumeClaims(sb.Namespace).Create(context.Background(), newPersistentVolumeClaim(sb), metav1.CreateOptions{})
 	}
-	_, err = c.clientset.CoreV1().PersistentVolumeClaims(sb.Namespace).Create(context.Background(), pvc, metav1.CreateOptions{})
 
 	if err != nil {
 		fmt.Println("Error while creating persistent volume claim: ", err.Error())
 		return err
 	}
 
-	fmt.Println("PVC created")
-
-	var replicas int32
-	replicas = 1
-
-	// mongo db deployment
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-mongodb",
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "mongodb-" + sb.Name,
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "mongodb-" + sb.Name,
-					Labels: map[string]string{
-						"app": "mongodb-" + sb.Name,
-					},
-				},
-				Spec: corev1.PodSpec{
-					Volumes: []corev1.Volume{
-						{
-							Name: "mongo-volume-" + sb.Name,
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: sb.Name + "-mongo-pvc",
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name:  "mongodb",
-							Image: "mongo",
-							Ports: []corev1.ContainerPort{
-								{
-									ContainerPort: 27017,
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "MONGO_INITDB_ROOT_USERNAME",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "mongo-root-username",
-										},
-									},
-								},
-								{
-									Name: "MONGO_INITDB_ROOT_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "mongo-root-password",
-										},
-									},
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "mongo-volume-" + sb.Name,
-									MountPath: "/data/db",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+	if !metav1.IsControlledBy(pvc, sb) {
+		return fmt.Errorf("%s", "Persistent volume claim already exists")
 	}
 
-	_, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), dep, metav1.CreateOptions{})
+	fmt.Println("PVC created")
+
+	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(depName)
+
+	if errors.IsNotFound(err) {
+		dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), newMongoDeployment(sb), metav1.CreateOptions{})
+	}
 
 	if err != nil {
 		fmt.Println("Error while creating mongo deployment: ", err.Error())
 		return err
 	}
 
-	fmt.Println("Mongo Deployment created")
-
-	// mongo db service
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-mongo-svc",
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{
-				"app": "mongodb-" + sb.Name,
-			},
-			Ports: []corev1.ServicePort{
-				{
-					TargetPort: intstr.FromInt(27017),
-					Port:       27017,
-				},
-			},
-		},
+	if !metav1.IsControlledBy(dep, sb) {
+		return fmt.Errorf("%s", "Deployment already exists")
 	}
 
-	_, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), svc, metav1.CreateOptions{})
+	fmt.Println("Mongo Deployment created")
+
+	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
+	if errors.IsNotFound(err) {
+		svc, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), newMongoService(sb), metav1.CreateOptions{})
+	}
 	if err != nil {
 		fmt.Println("Error while creating mongo service: ", err.Error())
 		return err
+	}
+	if !metav1.IsControlledBy(svc, sb) {
+		return fmt.Errorf("%s", "Service already exists")
 	}
 
 	fmt.Println("Mongo Service created")
@@ -333,192 +239,58 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 
 // creating a configmap, deployment and service for socialbook(image: ashwin901/social-book-server)
 func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
-
-	mongodbUri := "mongodb://" + sb.Spec.UserName + ":" + sb.Spec.Password + "@" + sb.Name + "-mongo-svc" + ":27017"
-
 	portNumber, err := strconv.Atoi(sb.Spec.Port)
+	cmName := sb.Name + "-cm"
+	svcName := sb.Name + "-svc"
 
 	if err != nil {
 		fmt.Println("invalid port number: ", err.Error())
 		return err
 	}
-
-	// config map
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-cm",
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Data: map[string]string{
-			"port":           sb.Spec.Port,
-			"secret":         "secret", // any random string (used for jwt token)
-			"stripe-api-key": "abc",    // api key used for payments
-			"user-email":     "abc@email.com",
-			"user-pwd":       "admin",
-			"client-url":     "sb-client.com", // redirect url after email verification
-			"mongodb-uri":    mongodbUri,
-		},
+	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
+	if errors.IsNotFound(err) {
+		cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newSocialBookConfigMap(sb), metav1.CreateOptions{})
 	}
-
-	cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
-
 	if err != nil {
 		fmt.Println("Error while creating socialbook configmap: ", err.Error())
 		return err
 	}
-
+	if !metav1.IsControlledBy(cm, sb) {
+		return fmt.Errorf("%s", "Service already exists")
+	}
 	fmt.Println("Config map created")
 
-	// social book deployment, image: ashwin901/social-book-server
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name,
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &sb.Spec.Replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "socialbook-" + sb.Name,
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "socialbook-" + sb.Name,
-					Labels: map[string]string{
-						"app": "socialbook-" + sb.Name,
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "socialbook",
-							Image: "ashwin901/social-book-server",
-							Ports: []corev1.ContainerPort{
-								{
-									ContainerPort: int32(portNumber),
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "PORT",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "port",
-										},
-									},
-								},
-								{
-									Name: "MONGODB_URI",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "mongodb-uri",
-										},
-									},
-								},
-								{
-									Name: "SECRET",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "secret",
-										},
-									},
-								},
-								{
-									Name: "STRIPE_API_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "stripe-api-key",
-										},
-									},
-								},
-								{
-									Name: "USER_EMAIL",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "user-email",
-										},
-									},
-								},
-								{
-									Name: "USER_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "user-pwd",
-										},
-									},
-								},
-								{
-									Name: "CLIENT_URL",
-									ValueFrom: &corev1.EnvVarSource{
-										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cm.Name,
-											},
-											Key: "client-url",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(sb.Name)
 
-	dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), dep, metav1.CreateOptions{})
+	if errors.IsNotFound(err) {
+		// social book deployment, image: ashwin901/social-book-server
+		dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), newSocialBookDeployment(sb, portNumber), metav1.CreateOptions{})
+	}
 
 	if err != nil {
 		fmt.Println("Error while creating socialbook deployment: ", err.Error())
 		return err
 	}
 
-	fmt.Println("SocialBook Deployment created")
-
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            sb.Name + "-svc",
-			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: dep.Spec.Template.Labels,
-			Type:     corev1.ServiceTypeNodePort,
-			Ports: []corev1.ServicePort{
-				{
-					TargetPort: intstr.FromInt(portNumber),
-					Port:       int32(portNumber),
-					NodePort:   32000,
-				},
-			},
-		},
+	if !metav1.IsControlledBy(dep, sb) {
+		return fmt.Errorf("%s", "Service already exists")
 	}
 
-	_, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), svc, metav1.CreateOptions{})
+	fmt.Println("SocialBook Deployment created")
+
+	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
+
+	if errors.IsNotFound(err) {
+		svc, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), newSocialBookService(sb, portNumber), metav1.CreateOptions{})
+	}
+
 	if err != nil {
 		fmt.Println("Error while creating socialbook service: ", err.Error())
 		return err
+	}
+
+	if !metav1.IsControlledBy(svc, sb) {
+		return fmt.Errorf("%s", "Service already exists")
 	}
 
 	fmt.Println("SocailBook Service created")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	kubeInformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -40,12 +41,14 @@ func main() {
 	}
 
 	ch := make(chan struct{})
-	factory := externalversions.NewSharedInformerFactory(customClientset, 10*time.Minute)
+	factory := kubeInformers.NewSharedInformerFactory(clientset, 10*time.Minute)
+	customFactory := externalversions.NewSharedInformerFactory(customClientset, 10*time.Minute)
 
 	// initializing controller
-	controller := controller.NewController(clientset, customClientset, factory.Operators().V1alpha1().SocialBooks())
+	controller := controller.NewController(clientset, customClientset, customFactory.Operators().V1alpha1().SocialBooks(), factory)
 
 	// initialising all the requested informers
+	customFactory.Start(ch)
 	factory.Start(ch)
 
 	// start the controller
