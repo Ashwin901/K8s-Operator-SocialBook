@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
@@ -108,10 +109,20 @@ func (c *Controller) reconcile(key string) error {
 	// get the SocialBook CR using lister
 	sb, err := c.lister.SocialBooks(ns).Get(name)
 
-	return c.handleMongoDbDeployment(*sb)
+	if err != nil {
+		fmt.Println("Error while getting resource from the lister: ", err.Error())
+		return err
+	}
+
+	err = c.handleMongoDbDeployment(*sb)
+	if err == nil {
+		err = c.handleSocialBookDeployment(*sb)
+	}
+	return err
 }
 
 // TODO: even if one of the resource fails the resources created before this will still remain, handle this
+// creating a configmap, pv, pvc, deployment and service for MongoDB
 func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	// config map
 	cm := &corev1.ConfigMap{
@@ -125,7 +136,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 		},
 	}
 
-	_, err := c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
+	cm, err := c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
 
 	if err != nil {
 		fmt.Println("Error while creating config map: ", err.Error())
@@ -199,7 +210,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	// mongo db deployment
 	mongoDep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      sb.Name,
+			Name:      "mongodb-" + sb.Name,
 			Namespace: sb.Namespace,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -211,7 +222,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: sb.Name,
+					Name: "mongodb-" + sb.Name,
 					Labels: map[string]string{
 						"app": "mongodb-" + sb.Name,
 					},
@@ -242,7 +253,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 									ValueFrom: &corev1.EnvVarSource{
 										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "mongo-cm-" + sb.Name,
+												Name: cm.Name,
 											},
 											Key: "mongo-root-username",
 										},
@@ -253,7 +264,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 									ValueFrom: &corev1.EnvVarSource{
 										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "mongo-cm-" + sb.Name,
+												Name: cm.Name,
 											},
 											Key: "mongo-root-password",
 										},
@@ -294,7 +305,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 			},
 			Ports: []corev1.ServicePort{
 				{
-					TargetPort: intstr.FromString("27017"),
+					TargetPort: intstr.FromInt(27017),
 					Port:       27017,
 				},
 			},
@@ -308,6 +319,198 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	}
 
 	fmt.Println("Mongo Service created")
+	return nil
+}
+
+// creating a configmap, deployment and service for socialbook(image: ashwin901/social-book-server)
+func (c *Controller) handleSocialBookDeployment(sb v1alpha1.SocialBook) error {
+
+	mongodbUri := "mongodb://" + sb.Spec.UserName + ":" + sb.Spec.Password + "@mongo-svc-" + sb.Name + ":27017"
+
+	portNumber, err := strconv.Atoi(sb.Spec.Port)
+
+	if err != nil {
+		fmt.Println("invalid port number: ", err.Error())
+		return err
+	}
+
+	// config map
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "socialbook-cm-" + sb.Name,
+			Namespace: sb.Namespace,
+		},
+		Data: map[string]string{
+			"port":           sb.Spec.Port,
+			"secret":         "secret", // any random string (used for jwt token)
+			"stripe-api-key": "abc",    // api key used for payments
+			"user-email":     "abc@email.com",
+			"user-pwd":       "admin",
+			"client-url":     "sb-client.com", // redirect url after email verification
+			"mongodb-uri":    mongodbUri,
+		},
+	}
+
+	cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
+
+	if err != nil {
+		fmt.Println("Error while creating socialbook configmap: ", err.Error())
+		return err
+	}
+
+	fmt.Println("Config map created")
+
+	// social book deployment, image: ashwin901/social-book-server
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "socialbook-" + sb.Name,
+			Namespace: sb.Namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &sb.Spec.Replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "socialbook-" + sb.Name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "socialbook-" + sb.Name,
+					Labels: map[string]string{
+						"app": "socialbook-" + sb.Name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "socialbook",
+							Image: "ashwin901/social-book-server",
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: int32(portNumber),
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "PORT",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "port",
+										},
+									},
+								},
+								{
+									Name: "MONGODB_URI",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "mongodb-uri",
+										},
+									},
+								},
+								{
+									Name: "SECRET",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "secret",
+										},
+									},
+								},
+								{
+									Name: "STRIPE_API_KEY",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "stripe-api-key",
+										},
+									},
+								},
+								{
+									Name: "USER_EMAIL",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "user-email",
+										},
+									},
+								},
+								{
+									Name: "USER_PASSWORD",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "user-pwd",
+										},
+									},
+								},
+								{
+									Name: "CLIENT_URL",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: cm.Name,
+											},
+											Key: "client-url",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), dep, metav1.CreateOptions{})
+
+	if err != nil {
+		fmt.Println("Error while creating socialbook deployment: ", err.Error())
+		return err
+	}
+
+	fmt.Println("SocialBook Deployment created")
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "socialbook-svc-" + sb.Name,
+			Namespace: sb.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: dep.Spec.Template.Labels,
+			Type:     corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{
+				{
+					TargetPort: intstr.FromInt(portNumber),
+					Port:       int32(portNumber),
+					NodePort:   32000,
+				},
+			},
+		},
+	}
+
+	_, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), svc, metav1.CreateOptions{})
+	if err != nil {
+		fmt.Println("Error while creating socialbook service: ", err.Error())
+		return err
+	}
+
+	fmt.Println("SocailBook Service created")
+
 	return nil
 }
 
