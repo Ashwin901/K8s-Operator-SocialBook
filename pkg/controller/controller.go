@@ -40,8 +40,8 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 
 	socialBookInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc:    controller.handleAdd,
-			DeleteFunc: controller.handleDelete,
+			AddFunc: controller.handleAdd,
+			// DeleteFunc: controller.handleDelete,
 		},
 	)
 
@@ -51,6 +51,8 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 func (c *Controller) Run(ch chan struct{}) {
 
 	fmt.Println("Starting Controller")
+
+	defer c.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ch, c.hasSynced) {
 		fmt.Println("Cache not synced")
@@ -73,6 +75,7 @@ func (c *Controller) worker() {
 func (c *Controller) processItem() bool {
 	item, shutdown := c.queue.Get()
 
+	//queue is no longer used
 	if shutdown {
 		return false
 	}
@@ -114,21 +117,22 @@ func (c *Controller) reconcile(key string) error {
 		return err
 	}
 
-	err = c.handleMongoDbDeployment(*sb)
+	err = c.handleMongoDbDeployment(sb)
 	if err == nil {
-		err = c.handleSocialBookDeployment(*sb)
+		err = c.handleSocialBookDeployment(sb)
 	}
 	return err
 }
 
 // TODO: even if one of the resource fails the resources created before this will still remain, handle this
 // creating a configmap, pv, pvc, deployment and service for MongoDB
-func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
+func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 	// config map
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mongo-cm-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name + "-mongo-cm",
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Data: map[string]string{
 			"mongo-root-username": sb.Spec.UserName,
@@ -148,22 +152,24 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	// create a persistent volume
 	pv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "mongo-pv-" + sb.Name,
+			Name:            sb.Name + "-mongo-pv",
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{
 				"ReadWriteOnce",
 			},
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimDelete,
 			Capacity: corev1.ResourceList{
 				corev1.ResourceName(corev1.ResourceStorage): resource.MustParse("1Gi"),
 			},
 			ClaimRef: &corev1.ObjectReference{
 				Namespace: sb.Namespace,
-				Name:      "mongo-pvc-" + sb.Name,
+				Name:      sb.Name + "-mongo-pvc",
 			},
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/mnt/data",
+					Path: "/tmp/data",
 				},
 			},
 		},
@@ -181,8 +187,9 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	// create a persistent volume claim
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mongo-pvc-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name + "-mongo-pvc",
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -208,10 +215,11 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	replicas = 1
 
 	// mongo db deployment
-	mongoDep := &appsv1.Deployment{
+	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mongodb-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name + "-mongodb",
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -233,7 +241,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 							Name: "mongo-volume-" + sb.Name,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "mongo-pvc-" + sb.Name,
+									ClaimName: sb.Name + "-mongo-pvc",
 								},
 							},
 						},
@@ -284,7 +292,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 		},
 	}
 
-	_, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), mongoDep, metav1.CreateOptions{})
+	_, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), dep, metav1.CreateOptions{})
 
 	if err != nil {
 		fmt.Println("Error while creating mongo deployment: ", err.Error())
@@ -294,10 +302,11 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 	fmt.Println("Mongo Deployment created")
 
 	// mongo db service
-	mongoSvc := &corev1.Service{
+	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mongo-svc-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name + "-mongo-svc",
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -312,7 +321,7 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 		},
 	}
 
-	_, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), mongoSvc, metav1.CreateOptions{})
+	_, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), svc, metav1.CreateOptions{})
 	if err != nil {
 		fmt.Println("Error while creating mongo service: ", err.Error())
 		return err
@@ -323,9 +332,9 @@ func (c *Controller) handleMongoDbDeployment(sb v1alpha1.SocialBook) error {
 }
 
 // creating a configmap, deployment and service for socialbook(image: ashwin901/social-book-server)
-func (c *Controller) handleSocialBookDeployment(sb v1alpha1.SocialBook) error {
+func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 
-	mongodbUri := "mongodb://" + sb.Spec.UserName + ":" + sb.Spec.Password + "@mongo-svc-" + sb.Name + ":27017"
+	mongodbUri := "mongodb://" + sb.Spec.UserName + ":" + sb.Spec.Password + "@" + sb.Name + "-mongo-svc" + ":27017"
 
 	portNumber, err := strconv.Atoi(sb.Spec.Port)
 
@@ -337,8 +346,9 @@ func (c *Controller) handleSocialBookDeployment(sb v1alpha1.SocialBook) error {
 	// config map
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "socialbook-cm-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name + "-cm",
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Data: map[string]string{
 			"port":           sb.Spec.Port,
@@ -363,8 +373,9 @@ func (c *Controller) handleSocialBookDeployment(sb v1alpha1.SocialBook) error {
 	// social book deployment, image: ashwin901/social-book-server
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "socialbook-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name,
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &sb.Spec.Replicas,
@@ -487,8 +498,9 @@ func (c *Controller) handleSocialBookDeployment(sb v1alpha1.SocialBook) error {
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "socialbook-svc-" + sb.Name,
-			Namespace: sb.Namespace,
+			Name:            sb.Name + "-svc",
+			Namespace:       sb.Namespace,
+			OwnerReferences: getOwnerReference(sb),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: dep.Spec.Template.Labels,
@@ -512,6 +524,12 @@ func (c *Controller) handleSocialBookDeployment(sb v1alpha1.SocialBook) error {
 	fmt.Println("SocailBook Service created")
 
 	return nil
+}
+
+func getOwnerReference(sb *v1alpha1.SocialBook) []metav1.OwnerReference {
+	return []metav1.OwnerReference{
+		*metav1.NewControllerRef(sb, v1alpha1.SchemeGroupVersion.WithKind("SocialBook")),
+	}
 }
 
 func (c *Controller) handleAdd(obj interface{}) {
