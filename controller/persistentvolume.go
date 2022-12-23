@@ -12,7 +12,7 @@ func newPersistentVolume(sb *v1alpha1.SocialBook) *corev1.PersistentVolume {
 	pv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            pvName,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -43,7 +43,7 @@ func newPersistentVolumeClaim(sb *v1alpha1.SocialBook) *corev1.PersistentVolumeC
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            pvcName,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{

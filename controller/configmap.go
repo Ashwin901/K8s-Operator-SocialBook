@@ -13,7 +13,7 @@ func newMongoConfigMap(sb *v1alpha1.SocialBook) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            cmName,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Data: map[string]string{
 			"mongo-root-username": sb.Spec.UserName,
@@ -33,7 +33,7 @@ func newSocialBookConfigMap(sb *v1alpha1.SocialBook) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            cmName,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Data: map[string]string{
 			"port":           sb.Spec.Port,

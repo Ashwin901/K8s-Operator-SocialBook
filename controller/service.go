@@ -16,7 +16,7 @@ func newMongoService(sb *v1alpha1.SocialBook) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            svcName,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -42,7 +42,7 @@ func newSocialBookService(sb *v1alpha1.SocialBook, portNumber int) *corev1.Servi
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            svcName,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{

@@ -20,7 +20,7 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            depName,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -103,7 +103,7 @@ func newSocialBookDeployment(sb *v1alpha1.SocialBook, portNumber int) *appsv1.De
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            sb.Name,
 			Namespace:       sb.Namespace,
-			OwnerReferences: getOwnerReference(sb),
+			OwnerReferences: setOwnerReference(sb),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &sb.Spec.Replicas,

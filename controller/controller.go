@@ -59,14 +59,52 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "socialbookController"),
 	}
 
+	// when socialbook custom resource is deleted all items created by the controller because of it are also deleted (because of owner reference)
+	// so no need to handle delete event
 	socialBookInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.handleAdd,
-			// DeleteFunc: controller.handleDelete,
+			AddFunc: controller.addItemToQueue,
 		},
 	)
 
+	// adding event handler functions for all the other resources
+	factory.Apps().V1().Deployments().Informer().AddEventHandler(
+		controller.getEventHandlerFunctions(),
+	)
+
+	factory.Core().V1().Services().Informer().AddEventHandler(
+		controller.getEventHandlerFunctions(),
+	)
+
+	factory.Core().V1().ConfigMaps().Informer().AddEventHandler(
+		controller.getEventHandlerFunctions(),
+	)
+
+	factory.Core().V1().PersistentVolumes().Informer().AddEventHandler(
+		controller.getEventHandlerFunctions(),
+	)
+
+	factory.Core().V1().PersistentVolumeClaims().Informer().AddEventHandler(
+		controller.getEventHandlerFunctions(),
+	)
+
 	return controller
+}
+
+func (c *Controller) getEventHandlerFunctions() cache.ResourceEventHandlerFuncs {
+	return cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.handleObject,
+		DeleteFunc: c.handleObject,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			old := oldObj.(metav1.Object)
+			new := newObj.(metav1.Object)
+			// if it has the same resource version we ignore it
+			if old.GetResourceVersion() == new.GetResourceVersion() {
+				return
+			}
+			c.handleObject(newObj)
+		},
+	}
 }
 
 func (c *Controller) Run(ch chan struct{}) {
@@ -292,13 +330,7 @@ func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 	return nil
 }
 
-func getOwnerReference(sb *v1alpha1.SocialBook) []metav1.OwnerReference {
-	return []metav1.OwnerReference{
-		*metav1.NewControllerRef(sb, v1alpha1.SchemeGroupVersion.WithKind("SocialBook")),
-	}
-}
-
-func (c *Controller) handleAdd(obj interface{}) {
+func (c *Controller) addItemToQueue(obj interface{}) {
 	fmt.Println("Add event")
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 
@@ -310,14 +342,33 @@ func (c *Controller) handleAdd(obj interface{}) {
 	c.queue.Add(key)
 }
 
-func (c *Controller) handleDelete(obj interface{}) {
-	fmt.Println("Delete event")
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-
-	if err != nil {
-		fmt.Println("Error while getting key for object: ", err.Error())
+func (c *Controller) handleObject(obj interface{}) {
+	fmt.Println("Change detected")
+	var object metav1.Object
+	var ok bool
+	if object, ok = obj.(metav1.Object); !ok {
+		fmt.Println("Invalid object")
 		return
 	}
 
-	c.queue.Add(key)
+	if owner := metav1.GetControllerOf(object); owner != nil {
+		if owner.Kind != "SocialBook" {
+			return
+		}
+
+		sb, err := c.socialbookLister.SocialBooks(object.GetNamespace()).Get(owner.Name)
+
+		if err != nil {
+			fmt.Println("Error while getting socialbook")
+			return
+		}
+
+		c.addItemToQueue(sb)
+	}
+}
+
+func setOwnerReference(sb *v1alpha1.SocialBook) []metav1.OwnerReference {
+	return []metav1.OwnerReference{
+		*metav1.NewControllerRef(sb, v1alpha1.SchemeGroupVersion.WithKind("SocialBook")),
+	}
 }
