@@ -8,9 +8,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/ashwin901/social-book-operator/controller"
 	"github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
 	"github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions"
-	"github.com/ashwin901/social-book-operator/pkg/controller"
 )
 
 func main() {

@@ -114,7 +114,7 @@ func (c *Controller) processItem() bool {
 	if c.reconcile(key) != nil {
 		// requeue the item
 		c.queue.AddRateLimited(item)
-		fmt.Println("Error during reconcile")
+		fmt.Println("Error during reconcile, item requeued")
 		return true
 	}
 
@@ -147,7 +147,6 @@ func (c *Controller) reconcile(key string) error {
 	return err
 }
 
-// TODO: even if one of the resource fails the resources created before this will still remain, handle this
 // creating a configmap, pv, pvc, deployment and service for MongoDB
 func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 
@@ -169,7 +168,7 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 	if !metav1.IsControlledBy(cm, sb) {
 		return fmt.Errorf("%s", "Config Map already exists")
 	}
-	fmt.Println("Config map created")
+	fmt.Println("Config map configured")
 
 	pv, err := c.pvLister.Get(pvName)
 	if errors.IsNotFound(err) {
@@ -186,22 +185,17 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 	fmt.Println("PV created")
 
 	pvc, err := c.pvcLister.PersistentVolumeClaims(sb.Namespace).Get(pvcName)
-
 	if errors.IsNotFound(err) {
 		// create a persistent volume claim
-
 		pvc, err = c.clientset.CoreV1().PersistentVolumeClaims(sb.Namespace).Create(context.Background(), newPersistentVolumeClaim(sb), metav1.CreateOptions{})
 	}
-
 	if err != nil {
 		fmt.Println("Error while creating persistent volume claim: ", err.Error())
 		return err
 	}
-
 	if !metav1.IsControlledBy(pvc, sb) {
 		return fmt.Errorf("%s", "Persistent volume claim already exists")
 	}
-
 	fmt.Println("PVC created")
 
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(depName)
