@@ -64,6 +64,9 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 	socialBookInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.addItemToQueue,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.addItemToQueue(newObj)
+			},
 		},
 	)
 
@@ -179,9 +182,19 @@ func (c *Controller) reconcile(key string) error {
 		return err
 	}
 	err = c.handleMongoDbDeployment(sb)
+
+	// used to update the Socialbook CR status
+	mongoStatus := false
+	sbStatus := false
+
 	if err == nil {
 		err = c.handleSocialBookDeployment(sb)
 	}
+
+	mongoStatus = true
+	sbStatus = err == nil
+
+	err = c.updateSocialbookStatus(sb, mongoStatus, sbStatus)
 	return err
 }
 
@@ -328,6 +341,22 @@ func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 	fmt.Println("SocailBook Service created")
 
 	return nil
+}
+
+func (c *Controller) updateSocialbookStatus(sb *v1alpha1.SocialBook, mongoStatus, sbStatus bool) error {
+	sbCopy := sb.DeepCopy()
+	sbCopy.Status.MongoDB = mongoStatus
+	sbCopy.Status.SocialBook = sbStatus
+
+	_, err := c.customClientset.OperatorsV1alpha1().SocialBooks(sbCopy.Namespace).UpdateStatus(context.Background(), sbCopy, metav1.UpdateOptions{})
+
+	if err != nil {
+		fmt.Println("Error while updating socialbook status")
+	}
+
+	fmt.Println("Status updated")
+
+	return err
 }
 
 func (c *Controller) addItemToQueue(obj interface{}) {

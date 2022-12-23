@@ -6,6 +6,9 @@ import (
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="SocialBookStatus",type=boolean,JSONPath=`.status.SocialBook`
+// +kubebuilder:printcolumn:name="MongoDBStatus",type=boolean,JSONPath=`.status.MongoDB`
 type SocialBook struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -22,7 +25,8 @@ type SocialBookSpec struct {
 }
 
 type SocialBookStatus struct {
-	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
+	SocialBook bool `json:"configMap,omitempty"`
+	MongoDB    bool `json:"mongo,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

@@ -15,7 +15,14 @@ spec:
     singular: socialbook
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.SocialBook
+      name: SocialBookStatus
+      type: boolean
+    - jsonPath: .status.MongoDB
+      name: MongoDBStatus
+      type: boolean
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:
@@ -45,13 +52,16 @@ spec:
             type: object
           status:
             properties:
-              availableReplicas:
-                format: int32
-                type: integer
+              configMap:
+                type: boolean
+              mongo:
+                type: boolean
             type: object
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}
 status:
   acceptedNames:
     kind: ""
