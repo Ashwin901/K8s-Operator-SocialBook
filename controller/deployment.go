@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strconv"
+
 	"github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -96,7 +98,8 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 	return dep
 }
 
-func newSocialBookDeployment(sb *v1alpha1.SocialBook, portNumber int) *appsv1.Deployment {
+func newSocialBookDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
+	portNumber, _ := strconv.Atoi(sb.Spec.Port)
 	cmName := sb.Name + "-cm"
 
 	dep := &appsv1.Deployment{

@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strconv"
+
 	"github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,8 +36,8 @@ func newMongoService(sb *v1alpha1.SocialBook) *corev1.Service {
 	return svc
 }
 
-func newSocialBookService(sb *v1alpha1.SocialBook, portNumber int) *corev1.Service {
-
+func newSocialBookService(sb *v1alpha1.SocialBook) *corev1.Service {
+	portNumber, _ := strconv.Atoi(sb.Spec.Port)
 	svcName := sb.Name + "-svc"
 
 	svc := &corev1.Service{

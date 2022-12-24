@@ -3,13 +3,14 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
 	"github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
 	informers "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/ashwin901.operators/v1alpha1"
 	lister "github.com/ashwin901/social-book-operator/pkg/client/listers/ashwin901.operators/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -206,128 +207,114 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 	depName := sb.Name + "-mongodb"
 	svcName := sb.Name + "-mongo-svc"
 
+	// creating a configmap
 	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
-	if errors.IsNotFound(err) {
-		cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newConfigMap(sb), metav1.CreateOptions{})
-	}
+	err = c.handleResourceCreation(err, cm, sb, "")
 	if err != nil {
-		fmt.Println("Error while creating socialbook configmap: ", err.Error())
 		return err
 	}
-	if !metav1.IsControlledBy(cm, sb) {
-		return fmt.Errorf("%s", "CM already exists")
-	}
-	fmt.Println("Config map created")
 
+	// Creating a PV for mongoDB
 	pv, err := c.pvLister.Get(pvName)
-	if errors.IsNotFound(err) {
-		// create a persistent volume
-		pv, err = c.clientset.CoreV1().PersistentVolumes().Create(context.Background(), newPersistentVolume(sb), metav1.CreateOptions{})
-	}
+	err = c.handleResourceCreation(err, pv, sb, "")
 	if err != nil {
-		fmt.Println("Error while creating persistent volume: ", err.Error())
 		return err
 	}
-	if !metav1.IsControlledBy(pv, sb) {
-		return fmt.Errorf("%s", "Persistent volume already exists")
-	}
-	fmt.Println("PV created")
 
+	// Creating a PVC for mongoDB
 	pvc, err := c.pvcLister.PersistentVolumeClaims(sb.Namespace).Get(pvcName)
-	if errors.IsNotFound(err) {
-		// create a persistent volume claim
-		pvc, err = c.clientset.CoreV1().PersistentVolumeClaims(sb.Namespace).Create(context.Background(), newPersistentVolumeClaim(sb), metav1.CreateOptions{})
-	}
+	err = c.handleResourceCreation(err, pvc, sb, "")
 	if err != nil {
-		fmt.Println("Error while creating persistent volume claim: ", err.Error())
 		return err
 	}
-	if !metav1.IsControlledBy(pvc, sb) {
-		return fmt.Errorf("%s", "Persistent volume claim already exists")
-	}
-	fmt.Println("PVC created")
 
+	// Creating mongoDB deployment
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(depName)
-
-	if errors.IsNotFound(err) {
-		dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), newMongoDeployment(sb), metav1.CreateOptions{})
-	}
-
+	err = c.handleResourceCreation(err, dep, sb, "mongo")
 	if err != nil {
-		fmt.Println("Error while creating mongo deployment: ", err.Error())
 		return err
 	}
 
-	if !metav1.IsControlledBy(dep, sb) {
-		return fmt.Errorf("%s", "Deployment already exists")
-	}
-
-	fmt.Println("Mongo Deployment created")
-
+	// Creating the corresponding service
 	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
-	if errors.IsNotFound(err) {
-		svc, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), newMongoService(sb), metav1.CreateOptions{})
-	}
+	err = c.handleResourceCreation(err, svc, sb, "mongo")
 	if err != nil {
-		fmt.Println("Error while creating mongo service: ", err.Error())
 		return err
 	}
-	if !metav1.IsControlledBy(svc, sb) {
-		return fmt.Errorf("%s", "Service already exists")
-	}
-
-	fmt.Println("Mongo Service created")
 	return nil
 }
 
-// creating a configmap, deployment and service for socialbook(image: ashwin901/social-book-server)
+// creating deployment and service for socialbook(image: ashwin901/social-book-server)
 func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
-	portNumber, err := strconv.Atoi(sb.Spec.Port)
+
 	svcName := sb.Name + "-svc"
 
-	if err != nil {
-		fmt.Println("invalid port number: ", err.Error())
-		return err
-	}
-
+	// Creating a deployment for image: ashwin901/social-book-server
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(sb.Name)
-
-	if errors.IsNotFound(err) {
-		// social book deployment, image: ashwin901/social-book-server
-		dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), newSocialBookDeployment(sb, portNumber), metav1.CreateOptions{})
-	}
-
+	err = c.handleResourceCreation(err, dep, sb, "sb")
 	if err != nil {
-		fmt.Println("Error while creating socialbook deployment: ", err.Error())
 		return err
 	}
 
-	if !metav1.IsControlledBy(dep, sb) {
-		return fmt.Errorf("%s", "Service already exists")
-	}
-
-	fmt.Println("SocialBook Deployment created")
-
+	// Creating the corresponding service(external)
 	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
-
-	if errors.IsNotFound(err) {
-		svc, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), newSocialBookService(sb, portNumber), metav1.CreateOptions{})
-	}
-
+	err = c.handleResourceCreation(err, svc, sb, "sb")
 	if err != nil {
-		fmt.Println("Error while creating socialbook service: ", err.Error())
 		return err
 	}
-
-	if !metav1.IsControlledBy(svc, sb) {
-		return fmt.Errorf("%s", "Service already exists")
-	}
-
-	fmt.Println("SocailBook Service created")
 
 	return nil
 }
 
+func (c *Controller) handleResourceCreation(err error, resource interface{}, sb *v1alpha1.SocialBook, appType string) error {
+	if errors.IsNotFound(err) {
+		switch resource.(type) {
+		case corev1.ConfigMap:
+			resource, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newConfigMap(sb), metav1.CreateOptions{})
+			break
+		case corev1.PersistentVolume:
+			resource, err = c.clientset.CoreV1().PersistentVolumes().Create(context.Background(), newPersistentVolume(sb), metav1.CreateOptions{})
+			break
+		case corev1.PersistentVolumeClaim:
+			resource, err = c.clientset.CoreV1().PersistentVolumeClaims(sb.Namespace).Create(context.Background(), newPersistentVolumeClaim(sb), metav1.CreateOptions{})
+			break
+		case corev1.Service:
+			var svc *corev1.Service
+			if appType == "mongo" {
+				svc = newMongoService(sb)
+			} else {
+				svc = newSocialBookService(sb)
+			}
+			resource, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), svc, metav1.CreateOptions{})
+			break
+		case appsv1.Deployment:
+			var dep *appsv1.Deployment
+			if appType == "mongo" {
+				dep = newMongoDeployment(sb)
+			} else {
+				dep = newSocialBookDeployment(sb)
+			}
+			resource, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), dep, metav1.CreateOptions{})
+			break
+		default:
+			fmt.Println("Unkown resource")
+			err = fmt.Errorf("Unkown resource")
+			break
+		}
+	}
+
+	if err != nil {
+		fmt.Println("Error while configuring resource: ", err.Error())
+		return err
+	}
+	if !metav1.IsControlledBy(resource.(metav1.Object), sb) {
+		return fmt.Errorf("%s", "Resource already exists")
+	}
+
+	return err
+}
+
+// updating the status of SocialBook custom resource
 func (c *Controller) updateSocialbookStatus(sb *v1alpha1.SocialBook, mongoStatus, sbStatus bool) error {
 	sbCopy := sb.DeepCopy()
 	sbCopy.Status.MongoDB = mongoStatus
@@ -344,6 +331,7 @@ func (c *Controller) updateSocialbookStatus(sb *v1alpha1.SocialBook, mongoStatus
 	return err
 }
 
+// adding SocialBook items to workqueue for processing
 func (c *Controller) addItemToQueue(obj interface{}) {
 	fmt.Println("Add event")
 	key, err := cache.MetaNamespaceKeyFunc(obj)
@@ -356,6 +344,7 @@ func (c *Controller) addItemToQueue(obj interface{}) {
 	c.queue.Add(key)
 }
 
+// checks if the resource is owned by "SocialBook" kind
 func (c *Controller) handleObject(obj interface{}) {
 	fmt.Println("Change detected")
 	var object metav1.Object
@@ -381,6 +370,7 @@ func (c *Controller) handleObject(obj interface{}) {
 	}
 }
 
+// used to set the owner reference of resources
 func setOwnerReference(sb *v1alpha1.SocialBook) []metav1.OwnerReference {
 	return []metav1.OwnerReference{
 		*metav1.NewControllerRef(sb, v1alpha1.SchemeGroupVersion.WithKind("SocialBook")),
