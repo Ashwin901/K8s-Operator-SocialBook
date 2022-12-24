@@ -200,8 +200,7 @@ func (c *Controller) reconcile(key string) error {
 
 // creating a configmap, pv, pvc, deployment and service for MongoDB
 func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
-
-	cmName := sb.Name + "-mongo-cm"
+	cmName := sb.Name + "-cm"
 	pvName := sb.Name + "-mongo-pv"
 	pvcName := sb.Name + "-mongo-pvc"
 	depName := sb.Name + "-mongodb"
@@ -209,17 +208,16 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 
 	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
 	if errors.IsNotFound(err) {
-		cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newMongoConfigMap(sb), metav1.CreateOptions{})
+		cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newConfigMap(sb), metav1.CreateOptions{})
 	}
 	if err != nil {
-		fmt.Println("Error while creating/getting config map: ", err.Error())
+		fmt.Println("Error while creating socialbook configmap: ", err.Error())
 		return err
 	}
-	// configmap with the same name exists but is not controlled by current sb
 	if !metav1.IsControlledBy(cm, sb) {
-		return fmt.Errorf("%s", "Config Map already exists")
+		return fmt.Errorf("%s", "CM already exists")
 	}
-	fmt.Println("Config map configured")
+	fmt.Println("Config map created")
 
 	pv, err := c.pvLister.Get(pvName)
 	if errors.IsNotFound(err) {
@@ -285,25 +283,12 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 // creating a configmap, deployment and service for socialbook(image: ashwin901/social-book-server)
 func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 	portNumber, err := strconv.Atoi(sb.Spec.Port)
-	cmName := sb.Name + "-cm"
 	svcName := sb.Name + "-svc"
 
 	if err != nil {
 		fmt.Println("invalid port number: ", err.Error())
 		return err
 	}
-	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
-	if errors.IsNotFound(err) {
-		cm, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newSocialBookConfigMap(sb), metav1.CreateOptions{})
-	}
-	if err != nil {
-		fmt.Println("Error while creating socialbook configmap: ", err.Error())
-		return err
-	}
-	if !metav1.IsControlledBy(cm, sb) {
-		return fmt.Errorf("%s", "Service already exists")
-	}
-	fmt.Println("Config map created")
 
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(sb.Name)
 

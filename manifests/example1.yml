@@ -1,10 +1,20 @@
 apiVersion: ashwin901.operators/v1alpha1
 kind: SocialBook
 metadata:
-  name: socialbook2
+  name: socialbook1
   namespace: dev
 spec:
-  replicas: 2
-  username: ashwin2
-  pwd: admin  
+  clientUrl: sb-client.com
+  email: abc@email.com
+  password: abc
+  jwtSecret: jwt
+  mongoPassword: password
+  mongoUsername: username 
   port: "5000"
+  replicas: 2            
+  stripeApiKey: stripe            
+                
+              
+              
+              
+                

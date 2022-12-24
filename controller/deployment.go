@@ -13,7 +13,7 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 	replicas = 1
 
 	depName := sb.Name + "-mongodb"
-	cmName := sb.Name + "-mongo-cm"
+	cmName := sb.Name + "-cm"
 
 	// mongo db deployment
 	dep := &appsv1.Deployment{

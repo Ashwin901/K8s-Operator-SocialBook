@@ -18,10 +18,15 @@ type SocialBook struct {
 }
 
 type SocialBookSpec struct {
-	Replicas int32  `json:"replicas,omitempty"`
-	UserName string `json:"username,omitempty"`
-	Password string `json:"pwd,omitempty"`
-	Port     string `json:"port,omitempty"`
+	Replicas      int32  `json:"replicas,omitempty"`      // number of pods for socialbook image
+	MongoUsername string `json:"mongoUsername,omitempty"` // mongodb username
+	MongoPassword string `json:"mongoPassword,omitempty"` // mongodb password
+	Port          string `json:"port,omitempty"`          // container port for socialbook
+	JwtSecret     string `json:"jwtSecret,omitempty"`     // used to generate jwt (any random string)
+	EmailId       string `json:"email,omitempty"`         // email id used to send verification emails
+	Password      string `json:"password,omitempty"`      // pwd of email id
+	ClientUrl     string `json:"clientUrl,omitempty"`     // redirection url used during email verification
+	StripeApiKey  string `json:"stripeApiKey,omitempty"`  // stripe api key used for payments
 }
 
 type SocialBookStatus struct {

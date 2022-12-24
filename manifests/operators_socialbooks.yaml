@@ -40,14 +40,24 @@ spec:
             type: object
           spec:
             properties:
-              port:
+              clientUrl:
                 type: string
-              pwd:
+              email:
+                type: string
+              jwtSecret:
+                type: string
+              mongoPassword:
+                type: string
+              mongoUsername:
+                type: string
+              password:
+                type: string
+              port:
                 type: string
               replicas:
                 format: int32
                 type: integer
-              username:
+              stripeApiKey:
                 type: string
             type: object
           status:
