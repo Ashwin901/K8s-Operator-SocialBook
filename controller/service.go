@@ -30,7 +30,7 @@ func newMongoService(sb *v1alpha1.SocialBook) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app": "mongodb-" + sb.Name,
+				"app": sb.Name + MongoDB,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -56,7 +56,7 @@ func newSocialBookService(sb *v1alpha1.SocialBook) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app": "mongodb-" + sb.Name,
+				"app": sb.Name + SocialBook,
 			},
 			Type: corev1.ServiceTypeNodePort,
 			Ports: []corev1.ServicePort{

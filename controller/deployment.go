@@ -36,20 +36,20 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": "mongodb-" + sb.Name,
+					"app": sb.Name + MongoDB,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "mongodb-" + sb.Name,
+					Name: sb.Name + MongoDB,
 					Labels: map[string]string{
-						"app": "mongodb-" + sb.Name,
+						"app": sb.Name + MongoDB,
 					},
 				},
 				Spec: corev1.PodSpec{
 					Volumes: []corev1.Volume{
 						{
-							Name: "mongo-volume-" + sb.Name,
+							Name: sb.Name + PersistentVolume,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: sb.Name + PersistentVolumeClaim,
@@ -59,7 +59,7 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 					},
 					Containers: []corev1.Container{
 						{
-							Name:  "mongodb",
+							Name:  sb.Name + MongoDB,
 							Image: "mongo",
 							Ports: []corev1.ContainerPort{
 								{
@@ -92,7 +92,7 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "mongo-volume-" + sb.Name,
+									Name:      sb.Name + PersistentVolume,
 									MountPath: "/data/db",
 								},
 							},
@@ -120,21 +120,21 @@ func newSocialBookDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 			Replicas: &sb.Spec.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": "socialbook-" + sb.Name,
+					"app": sb.Name + SocialBook,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "socialbook-" + sb.Name,
+					Name: sb.Name + SocialBook,
 					Labels: map[string]string{
-						"app": "socialbook-" + sb.Name,
+						"app": sb.Name + SocialBook,
 					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "socialbook",
-							Image: "ashwin901/social-book-server",
+							Name:  sb.Name,
+							Image: Image,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: int32(portNumber),

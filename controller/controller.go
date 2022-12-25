@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	appsLister "k8s.io/client-go/listers/apps/v1"
 	coreLister "k8s.io/client-go/listers/core/v1"
+	networkingLister "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -25,6 +26,7 @@ const (
 	Service               = "-svc"
 	PersistentVolume      = "-pv"
 	PersistentVolumeClaim = "-pvc"
+	NetworkPolicy         = "-np"
 	Deployment            = "-dep"
 	MongoDB               = "-mongo"
 	SocialBook            = "-sb"
@@ -32,44 +34,49 @@ const (
 	Success               = "Success"
 	Pending               = "Pending"
 	Failure               = "Failed"
+	Image                 = "ashwin901/social-book-server"
 )
 
 type Controller struct {
-	clientset        kubernetes.Interface
-	customClientset  versioned.Interface
-	socialbookLister lister.SocialBookLister
-	deploymentLister appsLister.DeploymentLister
-	serviceLister    coreLister.ServiceLister
-	configMapLister  coreLister.ConfigMapLister
-	pvLister         coreLister.PersistentVolumeLister
-	pvcLister        coreLister.PersistentVolumeClaimLister
-	socialbookSynced cache.InformerSynced
-	deploymentSynced cache.InformerSynced
-	serviceSynced    cache.InformerSynced
-	configMapSynced  cache.InformerSynced
-	pvSynced         cache.InformerSynced
-	pvcSynced        cache.InformerSynced
-	queue            workqueue.RateLimitingInterface
+	clientset           kubernetes.Interface
+	customClientset     versioned.Interface
+	socialbookLister    lister.SocialBookLister
+	deploymentLister    appsLister.DeploymentLister
+	serviceLister       coreLister.ServiceLister
+	configMapLister     coreLister.ConfigMapLister
+	pvLister            coreLister.PersistentVolumeLister
+	pvcLister           coreLister.PersistentVolumeClaimLister
+	networkPolicyLister networkingLister.NetworkPolicyLister
+	socialbookSynced    cache.InformerSynced
+	deploymentSynced    cache.InformerSynced
+	serviceSynced       cache.InformerSynced
+	configMapSynced     cache.InformerSynced
+	pvSynced            cache.InformerSynced
+	pvcSynced           cache.InformerSynced
+	networkPolicySynced cache.InformerSynced
+	queue               workqueue.RateLimitingInterface
 }
 
 func NewController(clientset kubernetes.Interface, customClientset versioned.Interface, socialBookInformer informers.SocialBookInformer, factory kubeInformers.SharedInformerFactory) *Controller {
 
 	controller := &Controller{
-		clientset:        clientset,
-		customClientset:  customClientset,
-		socialbookLister: socialBookInformer.Lister(),
-		deploymentLister: factory.Apps().V1().Deployments().Lister(),
-		serviceLister:    factory.Core().V1().Services().Lister(),
-		configMapLister:  factory.Core().V1().ConfigMaps().Lister(),
-		pvLister:         factory.Core().V1().PersistentVolumes().Lister(),
-		pvcLister:        factory.Core().V1().PersistentVolumeClaims().Lister(),
-		socialbookSynced: socialBookInformer.Informer().HasSynced,
-		deploymentSynced: factory.Apps().V1().Deployments().Informer().HasSynced,
-		serviceSynced:    factory.Core().V1().Services().Informer().HasSynced,
-		configMapSynced:  factory.Core().V1().ConfigMaps().Informer().HasSynced,
-		pvSynced:         factory.Core().V1().PersistentVolumes().Informer().HasSynced,
-		pvcSynced:        factory.Core().V1().PersistentVolumeClaims().Informer().HasSynced,
-		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "socialbookController"),
+		clientset:           clientset,
+		customClientset:     customClientset,
+		socialbookLister:    socialBookInformer.Lister(),
+		deploymentLister:    factory.Apps().V1().Deployments().Lister(),
+		serviceLister:       factory.Core().V1().Services().Lister(),
+		configMapLister:     factory.Core().V1().ConfigMaps().Lister(),
+		pvLister:            factory.Core().V1().PersistentVolumes().Lister(),
+		pvcLister:           factory.Core().V1().PersistentVolumeClaims().Lister(),
+		networkPolicyLister: factory.Networking().V1().NetworkPolicies().Lister(),
+		socialbookSynced:    socialBookInformer.Informer().HasSynced,
+		deploymentSynced:    factory.Apps().V1().Deployments().Informer().HasSynced,
+		serviceSynced:       factory.Core().V1().Services().Informer().HasSynced,
+		configMapSynced:     factory.Core().V1().ConfigMaps().Informer().HasSynced,
+		pvSynced:            factory.Core().V1().PersistentVolumes().Informer().HasSynced,
+		pvcSynced:           factory.Core().V1().PersistentVolumeClaims().Informer().HasSynced,
+		networkPolicySynced: factory.Networking().V1().NetworkPolicies().Informer().HasSynced,
+		queue:               workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "socialbookController"),
 	}
 
 	// when socialbook custom resource is deleted all items created by the controller because of it are also deleted (because of owner reference)
@@ -110,6 +117,10 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 		controller.getEventHandlerFunctions(),
 	)
 
+	factory.Networking().V1().NetworkPolicies().Informer().AddEventHandler(
+		controller.getEventHandlerFunctions(),
+	)
+
 	return controller
 }
 
@@ -135,7 +146,7 @@ func (c *Controller) Run(ch chan struct{}) {
 
 	defer c.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ch, c.socialbookSynced, c.configMapSynced, c.pvSynced, c.pvcSynced, c.serviceSynced, c.deploymentSynced) {
+	if !cache.WaitForCacheSync(ch, c.socialbookSynced, c.configMapSynced, c.pvSynced, c.pvcSynced, c.serviceSynced, c.deploymentSynced, c.networkPolicySynced) {
 		fmt.Println("Cache not synced")
 		return
 	}
@@ -230,6 +241,7 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook, sbCopy *v1
 	pvcName := sb.Name + PersistentVolumeClaim
 	depName := sb.Name + MongoDB
 	svcName := sb.Name + MongoDB
+	npName := sb.Name + MongoDB + NetworkPolicy
 
 	// creating a configmap
 	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
@@ -266,6 +278,13 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook, sbCopy *v1
 		return err
 	}
 
+	// Creating network policy for mongodb pods - Ingress rule
+	np, err := c.networkPolicyLister.NetworkPolicies(sb.Namespace).Get(npName)
+	err = c.handleResourceCreation(err, np, sb, MongoDB, NetworkPolicy)
+	if err != nil {
+		return err
+	}
+
 	sbCopy.Status.MongoDB = Success
 	return nil
 }
@@ -274,6 +293,7 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook, sbCopy *v1
 func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook, sbCopy *v1alpha1.SocialBook) error {
 
 	svcName := sb.Name
+	npName := sb.Name + NetworkPolicy
 
 	// Creating a deployment for image: ashwin901/social-book-server
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(sb.Name)
@@ -282,9 +302,27 @@ func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook, sbCopy 
 		return err
 	}
 
+	// // checking if the replicas of the deployment are same as the desired number of replicas
+	// if sb.Spec.Replicas && *sb.Spec.Replicas != dep.Spec.Replicas {
+	// 	fmt.Println("Incorrect number of replicas")
+	// 	dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Update(context.Background(), newDeployment(sb, SocialBook), metav1.UpdateOptions{})
+
+	// 	if err != nil {
+	// 		fmt.Println("Error while updating deployment")
+	// 		return err
+	// 	}
+	// }
+
 	// Creating the corresponding service(external)
 	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
 	err = c.handleResourceCreation(err, svc, sb, SocialBook, Service)
+	if err != nil {
+		return err
+	}
+
+	// Creating network policy for socialbook pods - Egress rule
+	np, err := c.networkPolicyLister.NetworkPolicies(sb.Namespace).Get(npName)
+	err = c.handleResourceCreation(err, np, sb, SocialBook, NetworkPolicy)
 	if err != nil {
 		return err
 	}
@@ -310,6 +348,9 @@ func (c *Controller) handleResourceCreation(err error, resource interface{}, sb 
 			break
 		case Deployment:
 			resource, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), newDeployment(sb, appType), metav1.CreateOptions{})
+			break
+		case NetworkPolicy:
+			resource, err = c.clientset.NetworkingV1().NetworkPolicies(sb.Namespace).Create(context.Background(), newNetworkPolicy(sb, appType), metav1.CreateOptions{})
 			break
 		default:
 			fmt.Println("Unkown resource")
