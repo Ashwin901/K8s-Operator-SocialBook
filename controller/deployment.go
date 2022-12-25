@@ -9,13 +9,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func newDeployment(sb *v1alpha1.SocialBook, appType string) *appsv1.Deployment {
+	if appType == MongoDB {
+		return newMongoDeployment(sb)
+	}
+
+	return newSocialBookDeployment(sb)
+}
+
 func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 
 	var replicas int32
 	replicas = 1
 
-	depName := sb.Name + "-mongodb"
-	cmName := sb.Name + "-cm"
+	depName := sb.Name + MongoDB
+	cmName := sb.Name + ConfigMap
 
 	// mongo db deployment
 	dep := &appsv1.Deployment{
@@ -44,7 +52,7 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 							Name: "mongo-volume-" + sb.Name,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: sb.Name + "-mongo-pvc",
+									ClaimName: sb.Name + PersistentVolumeClaim,
 								},
 							},
 						},
@@ -100,7 +108,7 @@ func newMongoDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 
 func newSocialBookDeployment(sb *v1alpha1.SocialBook) *appsv1.Deployment {
 	portNumber, _ := strconv.Atoi(sb.Spec.Port)
-	cmName := sb.Name + "-cm"
+	cmName := sb.Name + ConfigMap
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

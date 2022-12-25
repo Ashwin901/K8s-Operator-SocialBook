@@ -9,8 +9,6 @@ import (
 	"github.com/ashwin901/social-book-operator/pkg/client/clientset/versioned"
 	informers "github.com/ashwin901/social-book-operator/pkg/client/informers/externalversions/ashwin901.operators/v1alpha1"
 	lister "github.com/ashwin901/social-book-operator/pkg/client/listers/ashwin901.operators/v1alpha1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -20,6 +18,16 @@ import (
 	coreLister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+)
+
+const (
+	ConfigMap             = "-cm"
+	Service               = "-svc"
+	PersistentVolume      = "-pv"
+	PersistentVolumeClaim = "-pvc"
+	Deployment            = "-dep"
+	MongoDB               = "-mongo"
+	SocialBook            = "-sb"
 )
 
 type Controller struct {
@@ -154,7 +162,7 @@ func (c *Controller) processItem() bool {
 	}
 
 	if c.reconcile(key) != nil {
-		// requeue the item
+		// requeue the item if there were any errors
 		c.queue.AddRateLimited(item)
 		fmt.Println("Error during reconcile, item requeued")
 		return true
@@ -188,6 +196,7 @@ func (c *Controller) reconcile(key string) error {
 	mongoStatus := false
 	sbStatus := false
 
+	//
 	if err == nil {
 		err = c.handleSocialBookDeployment(sb)
 	}
@@ -201,43 +210,43 @@ func (c *Controller) reconcile(key string) error {
 
 // creating a configmap, pv, pvc, deployment and service for MongoDB
 func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
-	cmName := sb.Name + "-cm"
-	pvName := sb.Name + "-mongo-pv"
-	pvcName := sb.Name + "-mongo-pvc"
-	depName := sb.Name + "-mongodb"
-	svcName := sb.Name + "-mongo-svc"
+	cmName := sb.Name + ConfigMap
+	pvName := sb.Name + PersistentVolume
+	pvcName := sb.Name + PersistentVolumeClaim
+	depName := sb.Name + MongoDB
+	svcName := sb.Name + MongoDB
 
 	// creating a configmap
 	cm, err := c.configMapLister.ConfigMaps(sb.Namespace).Get(cmName)
-	err = c.handleResourceCreation(err, cm, sb, "")
+	err = c.handleResourceCreation(err, cm, sb, "", ConfigMap)
 	if err != nil {
 		return err
 	}
 
 	// Creating a PV for mongoDB
 	pv, err := c.pvLister.Get(pvName)
-	err = c.handleResourceCreation(err, pv, sb, "")
+	err = c.handleResourceCreation(err, pv, sb, "", PersistentVolume)
 	if err != nil {
 		return err
 	}
 
 	// Creating a PVC for mongoDB
 	pvc, err := c.pvcLister.PersistentVolumeClaims(sb.Namespace).Get(pvcName)
-	err = c.handleResourceCreation(err, pvc, sb, "")
+	err = c.handleResourceCreation(err, pvc, sb, "", PersistentVolumeClaim)
 	if err != nil {
 		return err
 	}
 
 	// Creating mongoDB deployment
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(depName)
-	err = c.handleResourceCreation(err, dep, sb, "mongo")
+	err = c.handleResourceCreation(err, dep, sb, MongoDB, Deployment)
 	if err != nil {
 		return err
 	}
 
 	// Creating the corresponding service
 	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
-	err = c.handleResourceCreation(err, svc, sb, "mongo")
+	err = c.handleResourceCreation(err, svc, sb, MongoDB, Service)
 	if err != nil {
 		return err
 	}
@@ -247,18 +256,18 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 // creating deployment and service for socialbook(image: ashwin901/social-book-server)
 func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 
-	svcName := sb.Name + "-svc"
+	svcName := sb.Name
 
 	// Creating a deployment for image: ashwin901/social-book-server
 	dep, err := c.deploymentLister.Deployments(sb.Namespace).Get(sb.Name)
-	err = c.handleResourceCreation(err, dep, sb, "sb")
+	err = c.handleResourceCreation(err, dep, sb, SocialBook, Deployment)
 	if err != nil {
 		return err
 	}
 
 	// Creating the corresponding service(external)
 	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
-	err = c.handleResourceCreation(err, svc, sb, "sb")
+	err = c.handleResourceCreation(err, svc, sb, SocialBook, Service)
 	if err != nil {
 		return err
 	}
@@ -266,35 +275,23 @@ func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 	return nil
 }
 
-func (c *Controller) handleResourceCreation(err error, resource interface{}, sb *v1alpha1.SocialBook, appType string) error {
+func (c *Controller) handleResourceCreation(err error, resource interface{}, sb *v1alpha1.SocialBook, appType string, resourceName string) error {
 	if errors.IsNotFound(err) {
-		switch resource.(type) {
-		case corev1.ConfigMap:
+		switch resourceName {
+		case ConfigMap:
 			resource, err = c.clientset.CoreV1().ConfigMaps(sb.Namespace).Create(context.Background(), newConfigMap(sb), metav1.CreateOptions{})
 			break
-		case corev1.PersistentVolume:
+		case PersistentVolume:
 			resource, err = c.clientset.CoreV1().PersistentVolumes().Create(context.Background(), newPersistentVolume(sb), metav1.CreateOptions{})
 			break
-		case corev1.PersistentVolumeClaim:
+		case PersistentVolumeClaim:
 			resource, err = c.clientset.CoreV1().PersistentVolumeClaims(sb.Namespace).Create(context.Background(), newPersistentVolumeClaim(sb), metav1.CreateOptions{})
 			break
-		case corev1.Service:
-			var svc *corev1.Service
-			if appType == "mongo" {
-				svc = newMongoService(sb)
-			} else {
-				svc = newSocialBookService(sb)
-			}
-			resource, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), svc, metav1.CreateOptions{})
+		case Service:
+			resource, err = c.clientset.CoreV1().Services(sb.Namespace).Create(context.Background(), newService(sb, appType), metav1.CreateOptions{})
 			break
-		case appsv1.Deployment:
-			var dep *appsv1.Deployment
-			if appType == "mongo" {
-				dep = newMongoDeployment(sb)
-			} else {
-				dep = newSocialBookDeployment(sb)
-			}
-			resource, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), dep, metav1.CreateOptions{})
+		case Deployment:
+			resource, err = c.clientset.AppsV1().Deployments(sb.Namespace).Create(context.Background(), newDeployment(sb, appType), metav1.CreateOptions{})
 			break
 		default:
 			fmt.Println("Unkown resource")
@@ -307,6 +304,8 @@ func (c *Controller) handleResourceCreation(err error, resource interface{}, sb 
 		fmt.Println("Error while configuring resource: ", err.Error())
 		return err
 	}
+
+	// check if the resource is controlled by current SocialBook resource
 	if !metav1.IsControlledBy(resource.(metav1.Object), sb) {
 		return fmt.Errorf("%s", "Resource already exists")
 	}
@@ -333,7 +332,6 @@ func (c *Controller) updateSocialbookStatus(sb *v1alpha1.SocialBook, mongoStatus
 
 // adding SocialBook items to workqueue for processing
 func (c *Controller) addItemToQueue(obj interface{}) {
-	fmt.Println("Add event")
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 
 	if err != nil {
@@ -346,7 +344,6 @@ func (c *Controller) addItemToQueue(obj interface{}) {
 
 // checks if the resource is owned by "SocialBook" kind
 func (c *Controller) handleObject(obj interface{}) {
-	fmt.Println("Change detected")
 	var object metav1.Object
 	var ok bool
 	if object, ok = obj.(metav1.Object); !ok {
@@ -362,7 +359,7 @@ func (c *Controller) handleObject(obj interface{}) {
 		sb, err := c.socialbookLister.SocialBooks(object.GetNamespace()).Get(owner.Name)
 
 		if err != nil {
-			fmt.Println("Error while getting socialbook")
+			fmt.Println("Error while getting socialbook", err.Error())
 			return
 		}
 

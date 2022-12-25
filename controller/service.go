@@ -9,9 +9,17 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+func newService(sb *v1alpha1.SocialBook, appType string) *corev1.Service {
+	if appType == MongoDB {
+		return newMongoService(sb)
+	}
+
+	return newSocialBookService(sb)
+}
+
 func newMongoService(sb *v1alpha1.SocialBook) *corev1.Service {
 
-	svcName := sb.Name + "-mongo-svc"
+	svcName := sb.Name + MongoDB
 
 	// mongo db service
 	svc := &corev1.Service{
@@ -38,7 +46,7 @@ func newMongoService(sb *v1alpha1.SocialBook) *corev1.Service {
 
 func newSocialBookService(sb *v1alpha1.SocialBook) *corev1.Service {
 	portNumber, _ := strconv.Atoi(sb.Spec.Port)
-	svcName := sb.Name + "-svc"
+	svcName := sb.Name
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

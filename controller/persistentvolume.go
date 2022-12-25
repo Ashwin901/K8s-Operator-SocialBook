@@ -8,7 +8,7 @@ import (
 )
 
 func newPersistentVolume(sb *v1alpha1.SocialBook) *corev1.PersistentVolume {
-	pvName := sb.Name + "-mongo-pv"
+	pvName := sb.Name + PersistentVolume
 	pv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            pvName,
@@ -24,7 +24,7 @@ func newPersistentVolume(sb *v1alpha1.SocialBook) *corev1.PersistentVolume {
 			},
 			ClaimRef: &corev1.ObjectReference{
 				Namespace: sb.Namespace,
-				Name:      sb.Name + "-mongo-pvc",
+				Name:      sb.Name + PersistentVolumeClaim,
 			},
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
@@ -38,7 +38,7 @@ func newPersistentVolume(sb *v1alpha1.SocialBook) *corev1.PersistentVolume {
 }
 
 func newPersistentVolumeClaim(sb *v1alpha1.SocialBook) *corev1.PersistentVolumeClaim {
-	pvcName := sb.Name + "-mongo-pvc"
+	pvcName := sb.Name + PersistentVolumeClaim
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            pvcName,
