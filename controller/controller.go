@@ -28,6 +28,10 @@ const (
 	Deployment            = "-dep"
 	MongoDB               = "-mongo"
 	SocialBook            = "-sb"
+	Kind                  = "SocialBook"
+	Success               = "Success"
+	Pending               = "Pending"
+	Failure               = "Failed"
 )
 
 type Controller struct {
@@ -74,6 +78,12 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.addItemToQueue,
 			UpdateFunc: func(oldObj, newObj interface{}) {
+				old := oldObj.(metav1.Object)
+				new := newObj.(metav1.Object)
+				// if it has the same resource version we ignore it
+				if old.GetResourceVersion() == new.GetResourceVersion() {
+					return
+				}
 				controller.addItemToQueue(newObj)
 			},
 		},
@@ -103,9 +113,9 @@ func NewController(clientset kubernetes.Interface, customClientset versioned.Int
 	return controller
 }
 
+// monitoring only delete and update event of other resources
 func (c *Controller) getEventHandlerFunctions() cache.ResourceEventHandlerFuncs {
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.handleObject,
 		DeleteFunc: c.handleObject,
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			old := oldObj.(metav1.Object)
@@ -125,7 +135,7 @@ func (c *Controller) Run(ch chan struct{}) {
 
 	defer c.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ch, c.socialbookSynced) {
+	if !cache.WaitForCacheSync(ch, c.socialbookSynced, c.configMapSynced, c.pvSynced, c.pvcSynced, c.serviceSynced, c.deploymentSynced) {
 		fmt.Println("Cache not synced")
 		return
 	}
@@ -190,26 +200,31 @@ func (c *Controller) reconcile(key string) error {
 		fmt.Println("Error while getting resource from the lister: ", err.Error())
 		return err
 	}
-	err = c.handleMongoDbDeployment(sb)
 
-	// used to update the Socialbook CR status
-	mongoStatus := false
-	sbStatus := false
+	// making a copy to update status
+	sbCopy := sb.DeepCopy()
+	sbCopy.Status.MongoDB = Pending
+	sbCopy.Status.SocialBook = Pending
 
-	//
-	if err == nil {
-		err = c.handleSocialBookDeployment(sb)
+	defer c.updateSocialbookStatus(sbCopy)
+
+	// creating all the resources required for mongodb
+	if err = c.handleMongoDbDeployment(sb, sbCopy); err != nil {
+		sbCopy.Status.MongoDB = Failure
+		return err
 	}
 
-	mongoStatus = true
-	sbStatus = err == nil
+	// creating resources for socialbook
+	if err = c.handleSocialBookDeployment(sb, sbCopy); err != nil {
+		sbCopy.Status.SocialBook = Failure
+		return err
+	}
 
-	err = c.updateSocialbookStatus(sb, mongoStatus, sbStatus)
-	return err
+	return nil
 }
 
-// creating a configmap, pv, pvc, deployment and service for MongoDB
-func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
+// creating a pv, pvc, deployment and service for MongoDB
+func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook, sbCopy *v1alpha1.SocialBook) error {
 	cmName := sb.Name + ConfigMap
 	pvName := sb.Name + PersistentVolume
 	pvcName := sb.Name + PersistentVolumeClaim
@@ -250,11 +265,13 @@ func (c *Controller) handleMongoDbDeployment(sb *v1alpha1.SocialBook) error {
 	if err != nil {
 		return err
 	}
+
+	sbCopy.Status.MongoDB = Success
 	return nil
 }
 
 // creating deployment and service for socialbook(image: ashwin901/social-book-server)
-func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
+func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook, sbCopy *v1alpha1.SocialBook) error {
 
 	svcName := sb.Name
 
@@ -272,6 +289,7 @@ func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook) error {
 		return err
 	}
 
+	sbCopy.Status.SocialBook = Success
 	return nil
 }
 
@@ -314,20 +332,13 @@ func (c *Controller) handleResourceCreation(err error, resource interface{}, sb 
 }
 
 // updating the status of SocialBook custom resource
-func (c *Controller) updateSocialbookStatus(sb *v1alpha1.SocialBook, mongoStatus, sbStatus bool) error {
-	sbCopy := sb.DeepCopy()
-	sbCopy.Status.MongoDB = mongoStatus
-	sbCopy.Status.SocialBook = sbStatus
+func (c *Controller) updateSocialbookStatus(sbCopy *v1alpha1.SocialBook) {
 
 	_, err := c.customClientset.OperatorsV1alpha1().SocialBooks(sbCopy.Namespace).UpdateStatus(context.Background(), sbCopy, metav1.UpdateOptions{})
 
 	if err != nil {
 		fmt.Println("Error while updating socialbook status")
 	}
-
-	fmt.Println("Status updated")
-
-	return err
 }
 
 // adding SocialBook items to workqueue for processing
@@ -352,7 +363,7 @@ func (c *Controller) handleObject(obj interface{}) {
 	}
 
 	if owner := metav1.GetControllerOf(object); owner != nil {
-		if owner.Kind != "SocialBook" {
+		if owner.Kind != Kind {
 			return
 		}
 
@@ -370,6 +381,6 @@ func (c *Controller) handleObject(obj interface{}) {
 // used to set the owner reference of resources
 func setOwnerReference(sb *v1alpha1.SocialBook) []metav1.OwnerReference {
 	return []metav1.OwnerReference{
-		*metav1.NewControllerRef(sb, v1alpha1.SchemeGroupVersion.WithKind("SocialBook")),
+		*metav1.NewControllerRef(sb, v1alpha1.SchemeGroupVersion.WithKind(Kind)),
 	}
 }

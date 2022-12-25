@@ -7,8 +7,8 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="SocialBookStatus",type=boolean,JSONPath=`.status.SocialBook`
-// +kubebuilder:printcolumn:name="MongoDBStatus",type=boolean,JSONPath=`.status.MongoDB`
+// +kubebuilder:printcolumn:name="MongoDB",type=string,JSONPath=`.status.mongo`
+// +kubebuilder:printcolumn:name="SocialBook",type=string,JSONPath=`.status.socialbook`
 type SocialBook struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -30,8 +30,8 @@ type SocialBookSpec struct {
 }
 
 type SocialBookStatus struct {
-	SocialBook bool `json:"configMap,omitempty"`
-	MongoDB    bool `json:"mongo,omitempty"`
+	MongoDB    string `json:"mongo,omitempty"`
+	SocialBook string `json:"socialbook,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

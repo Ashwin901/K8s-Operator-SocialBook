@@ -16,12 +16,12 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.SocialBook
-      name: SocialBookStatus
-      type: boolean
-    - jsonPath: .status.MongoDB
-      name: MongoDBStatus
-      type: boolean
+    - jsonPath: .status.mongo
+      name: MongoDB
+      type: string
+    - jsonPath: .status.socialbook
+      name: SocialBook
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -62,10 +62,10 @@ spec:
             type: object
           status:
             properties:
-              configMap:
-                type: boolean
               mongo:
-                type: boolean
+                type: string
+              socialbook:
+                type: string
             type: object
         type: object
     served: true

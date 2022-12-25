@@ -11,10 +11,5 @@ spec:
   mongoPassword: password
   mongoUsername: username 
   port: "5000"
-  replicas: 1           
+  replicas: 2           
   stripeApiKey: stripe            
-                
-              
-              
-              
-                
