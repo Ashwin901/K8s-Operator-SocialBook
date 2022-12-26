@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: social-book-operator
+  namespace: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: social-book-operator
+  template:
+    metadata:
+      labels:
+        app: social-book-operator
+    spec:
+      serviceAccountName: operator-sa
+      containers:
+        - name: social-book-operator
+          image: ashwin901/social-book-operator
+          imagePullPolicy: Always

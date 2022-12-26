@@ -6,34 +6,28 @@
 
 ## Components
 
-<ul>
-    <li>
-        Custom Resource
-    </li>
-    <li>
-        Controller
-    </li>
-</ul>
+1. Custom Resource
+2. Controller
 
 ### Custom Resource
 
-<ul>
-    <li><a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/operators_socialbooks.yaml">CRD</a></li>
-    <li>Kind: <b>SocialBook</b>, Group: <b>ashwin901.operators</b></li>
-    <li>Example for the Custom Resource can be found <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/example1.yml">here</a></li>
-</ul>
+1. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/operators_socialbooks.yaml">CRD</a>
+2. Group: <b>ashwin901.operators</b> Version: <b>v1alpha1</b> Kind: <b>SocialBook</b>
+3. Example for the Custom Resource can be found <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/example1.yml">here</a>
+
 
 ### Controller
 
 1. Controller code can be found <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/controller.go">here</a>.
 2. When a SocialBook CR is created the custom controller sets up the following resources: 
-    <ul>    
-        <li><a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/configmap.go">Config Map</a></li>
-        <li><a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/persistentvolume.go">Persistent Volume</a></li>
-        <li><a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/persistentvolume.go">Persistent Volume Claim</a></li>
-        <li><a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/deployment.go">Deployment - MongoDB and SocialBook</a></li>
-        <li><a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/service.go">Services</a></li>
-    </ul>
+        1. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/configmap.go">Config Map</a>
+        2. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/persistentvolume.go">Persistent Volume</a>
+        3. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/persistentvolume.go">Persistent Volume Claim</a>
+        4. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/deployment.go">Deployment - MongoDB and SocialBook</a>
+        5. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/service.go">Services</a>
+        6. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/controller/networkPolicy.go">Network Policy</a>
+    
+    
 
 3. If any of the above mentioned resource is updated/deleted then the custom controller will detect the change and try to get it back to the desired state.
 

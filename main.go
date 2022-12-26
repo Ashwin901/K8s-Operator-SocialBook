@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"time"
 
 	kubeInformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/ashwin901/social-book-operator/controller"
@@ -16,19 +17,25 @@ import (
 func main() {
 
 	configFile := "/home/ashwin901/.kube/config"
-
 	config, err := clientcmd.BuildConfigFromFlags("", configFile)
 
 	if err != nil {
-		fmt.Println("Error while building config: ", err.Error())
-		return
+		log.Printf("Error %s while building config for %s", err.Error(), configFile)
+
+		// if there is an error, try to get config from inside the cluster
+		config, err = rest.InClusterConfig()
+
+		if err != nil {
+			log.Printf("Error %s while building config from inside the cluster", err.Error())
+			return
+		}
 	}
 
 	// kubernetes clientset
 	clientset, err := kubernetes.NewForConfig(config)
 
 	if err != nil {
-		fmt.Println("Error while creating clientset: ", err.Error())
+		log.Printf("Error %s while creating clientset", err.Error())
 		return
 	}
 
@@ -36,7 +43,7 @@ func main() {
 	customClientset, err := versioned.NewForConfig(config)
 
 	if err != nil {
-		fmt.Println("Error while creating clientset: ", err.Error())
+		log.Printf("Error %s while creating customm clientset: ", err.Error())
 		return
 	}
 

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/ashwin901/social-book-operator/pkg/apis/ashwin901.operators/v1alpha1"
@@ -142,16 +143,14 @@ func (c *Controller) getEventHandlerFunctions() cache.ResourceEventHandlerFuncs 
 
 func (c *Controller) Run(ch chan struct{}) {
 
-	fmt.Println("Starting Controller")
+	log.Printf("Starting Controller")
 
 	defer c.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ch, c.socialbookSynced, c.configMapSynced, c.pvSynced, c.pvcSynced, c.serviceSynced, c.deploymentSynced, c.networkPolicySynced) {
-		fmt.Println("Cache not synced")
+		log.Printf("Cache not synced")
 		return
 	}
-
-	fmt.Println("Cache synced")
 
 	go wait.Until(c.worker, 1*time.Second, ch)
 
@@ -185,7 +184,6 @@ func (c *Controller) processItem() bool {
 	if c.reconcile(key) != nil {
 		// requeue the item if there were any errors
 		c.queue.AddRateLimited(item)
-		fmt.Println("Error during reconcile, item requeued")
 		return true
 	}
 
@@ -208,7 +206,7 @@ func (c *Controller) reconcile(key string) error {
 		if errors.IsNotFound(err) {
 			return nil // object not present, so no need to requeue
 		}
-		fmt.Println("Error while getting resource from the lister: ", err.Error())
+		log.Printf("Error %s while getting %s from the lister", err.Error(), sb.Name)
 		return err
 	}
 
@@ -221,15 +219,19 @@ func (c *Controller) reconcile(key string) error {
 
 	// creating all the resources required for mongodb
 	if err = c.handleMongoDbDeployment(sb, sbCopy); err != nil {
+		log.Printf("Error %s while creating MongoDB deployment for %s", err.Error(), sb.Name)
 		sbCopy.Status.MongoDB = Failure
 		return err
 	}
 
 	// creating resources for socialbook
 	if err = c.handleSocialBookDeployment(sb, sbCopy); err != nil {
+		log.Printf("Error %s while creating SocialBook deployment for %s", err.Error(), sb.Name)
 		sbCopy.Status.SocialBook = Failure
 		return err
 	}
+
+	log.Printf("MongoDB and SocalBook successfully deployed for %s", sb.Name)
 
 	return nil
 }
@@ -353,14 +355,12 @@ func (c *Controller) handleResourceCreation(err error, resource interface{}, sb 
 			resource, err = c.clientset.NetworkingV1().NetworkPolicies(sb.Namespace).Create(context.Background(), newNetworkPolicy(sb, appType), metav1.CreateOptions{})
 			break
 		default:
-			fmt.Println("Unkown resource")
-			err = fmt.Errorf("Unkown resource")
+			err = fmt.Errorf("Unkown resource %s", resourceName)
 			break
 		}
 	}
 
 	if err != nil {
-		fmt.Println("Error while configuring resource: ", err.Error())
 		return err
 	}
 
@@ -374,12 +374,13 @@ func (c *Controller) handleResourceCreation(err error, resource interface{}, sb 
 
 // updating the status of SocialBook custom resource
 func (c *Controller) updateSocialbookStatus(sbCopy *v1alpha1.SocialBook) {
-
 	_, err := c.customClientset.OperatorsV1alpha1().SocialBooks(sbCopy.Namespace).UpdateStatus(context.Background(), sbCopy, metav1.UpdateOptions{})
 
 	if err != nil {
-		fmt.Println("Error while updating socialbook status")
+		log.Printf("Error %s while updating status of %s", err.Error(), sbCopy.Name)
 	}
+
+	log.Printf("Status for %s successfully updated", sbCopy.Name)
 }
 
 // adding SocialBook items to workqueue for processing
@@ -387,7 +388,7 @@ func (c *Controller) addItemToQueue(obj interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 
 	if err != nil {
-		fmt.Println("Error while getting key for object: ", err.Error())
+		log.Printf("Error %s while adding item %s to queue", err.Error(), obj)
 		return
 	}
 
@@ -399,7 +400,7 @@ func (c *Controller) handleObject(obj interface{}) {
 	var object metav1.Object
 	var ok bool
 	if object, ok = obj.(metav1.Object); !ok {
-		fmt.Println("Invalid object")
+		log.Printf("Invalid object %s", obj)
 		return
 	}
 
@@ -411,7 +412,7 @@ func (c *Controller) handleObject(obj interface{}) {
 		sb, err := c.socialbookLister.SocialBooks(object.GetNamespace()).Get(owner.Name)
 
 		if err != nil {
-			fmt.Println("Error while getting socialbook", err.Error())
+			log.Printf("Error %s while getting socialbook %s", err.Error(), owner.Name)
 			return
 		}
 
