@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"time"
 
@@ -16,11 +17,13 @@ import (
 
 func main() {
 
-	configFile := "/home/ashwin901/.kube/config"
-	config, err := clientcmd.BuildConfigFromFlags("", configFile)
+	configFile := flag.String("config", "/.kube/config", "kube config file path")
+	flag.Parse()
+
+	config, err := clientcmd.BuildConfigFromFlags("", *configFile)
 
 	if err != nil {
-		log.Printf("Error %s while building config for %s", err.Error(), configFile)
+		log.Printf("Error %s while building config for %s", err.Error(), *configFile)
 
 		// if there is an error, try to get config from inside the cluster
 		config, err = rest.InClusterConfig()
