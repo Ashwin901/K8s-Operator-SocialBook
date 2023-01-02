@@ -304,16 +304,16 @@ func (c *Controller) handleSocialBookDeployment(sb *v1alpha1.SocialBook, sbCopy 
 		return err
 	}
 
-	// // checking if the replicas of the deployment are same as the desired number of replicas
-	// if sb.Spec.Replicas && *sb.Spec.Replicas != dep.Spec.Replicas {
-	// 	fmt.Println("Incorrect number of replicas")
-	// 	dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Update(context.Background(), newDeployment(sb, SocialBook), metav1.UpdateOptions{})
+	// checking if the replicas of the deployment are same as the desired number of replicas
+	if sb.Spec.Replicas != *(dep.Spec.Replicas) {
+		fmt.Println("Incorrect number of replicas")
+		dep, err = c.clientset.AppsV1().Deployments(sb.Namespace).Update(context.Background(), newDeployment(sb, SocialBook), metav1.UpdateOptions{})
 
-	// 	if err != nil {
-	// 		fmt.Println("Error while updating deployment")
-	// 		return err
-	// 	}
-	// }
+		if err != nil {
+			fmt.Println("Error while updating deployment")
+			return err
+		}
+	}
 
 	// Creating the corresponding service(external)
 	svc, err := c.serviceLister.Services(sb.Namespace).Get(svcName)
