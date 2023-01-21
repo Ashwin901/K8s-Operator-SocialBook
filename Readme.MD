@@ -2,7 +2,7 @@
 
 ### Description
 This operator is used to set up this <a href="https://github.com/Ashwin901/Social-Book-Server">application</a>. The application includes a Nodejs server and a MongoDB database. Docker image of the server can be found <a href="https://hub.docker.com/repository/docker/ashwin901/social-book-server">here</a>. <br/>
-When a new `SocialBook` custom resource is created the custom controller will create a `MongoDB` deployment, a corresponding service for it, Persistent Volume and Persistent Volume Claim. It will also create a `SocialBook` deployment using the docker image of the server and an external service so that it can be accessed outside the cluster.<br/>
+When a new `SocialBook` custom resource is created the custom controller will create a `MongoDB` deployment, a corresponding service for it, Persistent Volume and Persistent Volume Claim. It will also create a `SocialBook` deployment and an external service so that it can be accessed outside the cluster.<br/>
 Apart from this it will also create a Config Map and Network policies for both MongoDB and SocialBook pods. The number of replicas and other information can be passed in the spec of the custom resource.
 
 > Note: For the network policies to work, a network plugin should already be installed on the cluster.
@@ -19,7 +19,7 @@ Apart from this it will also create a Config Map and Network policies for both M
 1. To install the operator inside the cluster we can use the docker image of the <a href="https://hub.docker.com/repository/docker/ashwin901/social-book-operator">operator</a>.
 2. Install the CRD by using the following <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/operators_socialbooks.yaml">file</a>.
 3. Copy the files from this <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/tree/master/manifests/install">directory</a>. 
-4. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/install/rbac.yml">rbac.yml</a> file conists of a service account, cluster role and cluster role binding. This basically gives the operator pod permissions to access Kubernetes resources. Run `kubectl apply -f rbac.yml`.
+4. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/install/rbac.yml">rbac.yml</a> file conists of a service account, cluster role and cluster role binding. This basically gives the operator permissions to access Kubernetes resources. Run `kubectl apply -f rbac.yml`.
 5. <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/install/deployment.yml">deployment.yml</a> creates a deployment for the operator docker image. Run `kubectl apply -f deployment.yml`
 
 Now you can test the operator by creating a new SocialBook custom resource. You can use this <a href="https://github.com/Ashwin901/K8s-Operator-SocialBook/blob/master/manifests/example1.yml">example</a>. Run `kubectl apply -f example1.yml`. 
